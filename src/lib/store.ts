@@ -22,7 +22,6 @@ export const BROKERS = [
     options: {
       username: 'ztmxasef:ztmxasef',
       password: 'AxprRMcQ9pDWkyWqcCZa_q2fuTBWQsGE',
-      protocol: 'ws' as const,
       protocolVersion: 4 as const,
       clean: true,
       reconnectPeriod: 5000,
@@ -35,7 +34,7 @@ export const BROKERS = [
     options: {
       username: 'Web',
       password: 'a',
-      protocol: 'ws' as const,
+      clientId: 'WebClient',
       protocolVersion: 4 as const,
       clean: true,
       reconnectPeriod: 5000,
@@ -48,7 +47,6 @@ export const BROKERS = [
     options: {
       username: '2fHRLg.LixlRg',
       password: 'bhjvIdszO--QR4JqK4eIcdA2aAbwO0vGNN_kJOPucnQ',
-      protocol: 'ws' as const,
       protocolVersion: 4 as const,
       clean: true,
       reconnectPeriod: 5000,
@@ -114,9 +112,10 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     try {
       // Create dynamic options per connection to prevent clientId collision
+      // Only set a random clientId if the broker config doesn't enforce a specific one.
       const connectOptions = {
-        ...brokerConfig.options,
         clientId: `WebClient_${Math.random().toString(16).slice(2, 10)}`,
+        ...brokerConfig.options,
       };
 
       const newClient = mqtt.connect(brokerConfig.url, connectOptions);
