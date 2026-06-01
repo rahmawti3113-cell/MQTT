@@ -11,7 +11,15 @@ async function startServer() {
   const server = http.createServer(app);
 
   // Set up WebSocket server for proxy
-  const wss = new WebSocketServer({ server, path: '/mqtt-proxy' });
+  const wss = new WebSocketServer({ 
+    server, 
+    path: '/mqtt-proxy',
+    handleProtocols: (protocols) => {
+      // If the client requests 'mqtt', 'mqttv3.1', etc., echo it back
+      return protocols instanceof Set ? protocols.values().next().value :
+             Array.isArray(protocols) && protocols.length > 0 ? protocols[0] : false;
+    }
+  });
 
   wss.on('connection', (ws, req) => {
     try {
