@@ -148,107 +148,115 @@ export const useAppStore = create<AppState>((set, get) => ({
   connect: (brokerId: string) => {
     const state = get();
     
+    const finishConnection = () => {
+      const currentState = get();
+      if (currentState.client) {
+        currentState.client.removeAllListeners(); // Prevent old events from interfering
+        currentState.client.end(true);
+        currentState.addLog('Disconnected from previous broker.', 'info');
+      }
+
+      const brokerConfig = BROKERS.find((b) => b.id === brokerId);
+      if (!brokerConfig) return;
+
+      set({ connectionStatus: 'Connecting', activeBroker: brokerId });
+      currentState.addLog(`Connecting to ${brokerConfig.name}...`, 'info');
+
+      try {
+        let newClient: any;
+        
+        if (brokerConfig.useAbly) {
+          newClient = new AblyMqttWrapper(`${brokerConfig.options.username}:${brokerConfig.options.password}`);
+        } else {
+          const connectOptions = {
+            clientId: `WebClient_${Math.random().toString(16).slice(2, 10)}`,
+            ...brokerConfig.options,
+          };
+          newClient = mqtt.connect(brokerConfig.url, connectOptions);
+        }
+
+        newClient.on('connect', () => {
+          set({ connectionStatus: 'Connected' });
+          get().addLog(`Successfully connected to ${brokerConfig.name}`, 'success');
+          
+          // Subscribe to topics
+          newClient.subscribe('sensor/suhu');
+          newClient.subscribe('sensor/kelembaban');
+          newClient.subscribe('kontrol/relay1');
+          newClient.subscribe('kontrol/relay2');
+          newClient.subscribe('kontrol/relay3');
+          newClient.subscribe('kontrol/relay4');
+          newClient.subscribe('kontrol/variasi1');
+          newClient.subscribe('kontrol/variasi2');
+          newClient.subscribe('kontrol/broker');
+        });
+
+        newClient.on('error', (err: any) => {
+          console.error('MQTT Error: ', err);
+          set({ connectionStatus: 'Error' });
+          get().addLog(`Connection error: ${err.message}`, 'error');
+        });
+
+        newClient.on('close', () => {
+          if (get().connectionStatus !== 'Disconnected') {
+             set({ connectionStatus: 'Disconnected' });
+             get().addLog('Connection closed.', 'error');
+          }
+        });
+
+        newClient.on('message', (topic: string, message: any) => {
+          const payload = message.toString().trim();
+          // get().addLog(`[${topic}] ${payload}`); // Optionally log all messages
+          
+          if (topic === 'sensor/suhu') {
+            set({ temperature: payload });
+          } else if (topic === 'sensor/kelembaban') {
+            set({ humidity: payload });
+          } else if (topic.startsWith('kontrol/relay')) {
+            const id = topic.replace('kontrol/', '');
+            set((s) => ({ relays: { ...s.relays, [id]: payload } }));
+            // If a relay turns on visually we might want to shut off variasi memory
+            if (payload === 'ON') {
+               set({ variasiMode: 0 });
+            }
+          } else if (topic === 'kontrol/variasi1') {
+            if (payload === 'START') {
+              set({ variasiMode: 1 });
+              get().addLog('Variasi 1 Dimulai', 'info');
+            } else if (payload === 'STOP') {
+              set({ variasiMode: 0 });
+              get().addLog('Variasi 1 Dihentikan', 'info');
+            }
+          } else if (topic === 'kontrol/variasi2') {
+            if (payload === 'START') {
+              set({ variasiMode: 2 });
+              get().addLog('Variasi 2 Dimulai', 'info');
+            } else if (payload === 'STOP') {
+              set({ variasiMode: 0 });
+              get().addLog('Variasi 2 Dihentikan', 'info');
+            }
+          } else if (topic === 'kontrol/broker') {
+            // If device asks to change broker, maybe we reflect that
+            get().addLog(`Device requested broker change to: ${payload}`, 'info');
+          }
+        });
+
+        set({ client: newClient });
+      } catch (err: any) {
+        set({ connectionStatus: 'Error' });
+        currentState.addLog(`Failed to initialize MQTT: ${err.message}`, 'error');
+      }
+    };
+
     // Request ESP32 to switch broker BEFORE disconnecting from the current one
     if (state.client && state.connectionStatus === 'Connected') {
       state.client.publish('kontrol/broker', brokerId);
       state.addLog(`Mengirim instruksi ganti broker ke ESP32: ${brokerId}`, 'command');
-    }
-
-    if (state.client) {
-      state.client.removeAllListeners(); // Prevent old events from interfering
-      state.client.end(true);
-      state.addLog('Disconnected from previous broker.', 'info');
-    }
-
-    const brokerConfig = BROKERS.find((b) => b.id === brokerId);
-    if (!brokerConfig) return;
-
-    set({ connectionStatus: 'Connecting', activeBroker: brokerId });
-    state.addLog(`Connecting to ${brokerConfig.name}...`, 'info');
-
-    try {
-      let newClient: any;
       
-      if (brokerConfig.useAbly) {
-        newClient = new AblyMqttWrapper(`${brokerConfig.options.username}:${brokerConfig.options.password}`);
-      } else {
-        const connectOptions = {
-          clientId: `WebClient_${Math.random().toString(16).slice(2, 10)}`,
-          ...brokerConfig.options,
-        };
-        newClient = mqtt.connect(brokerConfig.url, connectOptions);
-      }
-
-      newClient.on('connect', () => {
-        set({ connectionStatus: 'Connected' });
-        get().addLog(`Successfully connected to ${brokerConfig.name}`, 'success');
-        
-        // Subscribe to topics
-        newClient.subscribe('sensor/suhu');
-        newClient.subscribe('sensor/kelembaban');
-        newClient.subscribe('kontrol/relay1');
-        newClient.subscribe('kontrol/relay2');
-        newClient.subscribe('kontrol/relay3');
-        newClient.subscribe('kontrol/relay4');
-        newClient.subscribe('kontrol/variasi1');
-        newClient.subscribe('kontrol/variasi2');
-        newClient.subscribe('kontrol/broker');
-      });
-
-      newClient.on('error', (err) => {
-        console.error('MQTT Error: ', err);
-        set({ connectionStatus: 'Error' });
-        get().addLog(`Connection error: ${err.message}`, 'error');
-      });
-
-      newClient.on('close', () => {
-        if (get().connectionStatus !== 'Disconnected') {
-           set({ connectionStatus: 'Disconnected' });
-           get().addLog('Connection closed.', 'error');
-        }
-      });
-
-      newClient.on('message', (topic, message) => {
-        const payload = message.toString().trim();
-        // get().addLog(`[${topic}] ${payload}`); // Optionally log all messages
-        
-        if (topic === 'sensor/suhu') {
-          set({ temperature: payload });
-        } else if (topic === 'sensor/kelembaban') {
-          set({ humidity: payload });
-        } else if (topic.startsWith('kontrol/relay')) {
-          const id = topic.replace('kontrol/', '');
-          set((s) => ({ relays: { ...s.relays, [id]: payload } }));
-          // If a relay turns on visually we might want to shut off variasi memory
-          if (payload === 'ON') {
-             set({ variasiMode: 0 });
-          }
-        } else if (topic === 'kontrol/variasi1') {
-          if (payload === 'START') {
-            set({ variasiMode: 1 });
-            get().addLog('Variasi 1 Dimulai', 'info');
-          } else if (payload === 'STOP') {
-            set({ variasiMode: 0 });
-            get().addLog('Variasi 1 Dihentikan', 'info');
-          }
-        } else if (topic === 'kontrol/variasi2') {
-          if (payload === 'START') {
-            set({ variasiMode: 2 });
-            get().addLog('Variasi 2 Dimulai', 'info');
-          } else if (payload === 'STOP') {
-            set({ variasiMode: 0 });
-            get().addLog('Variasi 2 Dihentikan', 'info');
-          }
-        } else if (topic === 'kontrol/broker') {
-          // If device asks to change broker, maybe we reflect that
-          get().addLog(`Device requested broker change to: ${payload}`, 'info');
-        }
-      });
-
-      set({ client: newClient });
-    } catch (err: any) {
-      set({ connectionStatus: 'Error' });
-      state.addLog(`Failed to initialize MQTT: ${err.message}`, 'error');
+      // Delay before actually killing the connection so the publish message takes effect 
+      setTimeout(finishConnection, 1000);
+    } else {
+      finishConnection();
     }
   },
 
