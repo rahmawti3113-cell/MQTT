@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import mqtt from 'mqtt';
+import * as Ably from 'ably';
 
 export type LogEntry = {
   id: string;
@@ -7,6 +8,58 @@ export type LogEntry = {
   message: string;
   type: 'info' | 'success' | 'error' | 'command';
 };
+
+class AblyMqttWrapper {
+  client: Ably.Realtime;
+  listeners: { [key: string]: Function[] } = {};
+
+  constructor(key: string) {
+    this.client = new Ably.Realtime({ key });
+    this.client.connection.on('connected', () => this.emit('connect'));
+    this.client.connection.on('failed', (err) => this.emit('error', err));
+    this.client.connection.on('closed', () => this.emit('close'));
+    this.client.connection.on('disconnected', () => this.emit('close'));
+  }
+
+  on(event: string, callback: Function) {
+    if (!this.listeners[event]) this.listeners[event] = [];
+    this.listeners[event].push(callback);
+  }
+
+  emit(event: string, ...args: any[]) {
+    if (this.listeners[event]) {
+      this.listeners[event].forEach((cb) => cb(...args));
+    }
+  }
+
+  removeAllListeners() {
+    this.listeners = {};
+  }
+
+  subscribe(topic: string) {
+    const channel = this.client.channels.get(topic);
+    channel.subscribe((msg) => {
+      let payload = '';
+      if (typeof msg.data === 'string') {
+        payload = msg.data;
+      } else if (msg.data instanceof ArrayBuffer || (msg.data && msg.data.buffer instanceof ArrayBuffer)) {
+        payload = new TextDecoder().decode(new Uint8Array(msg.data as any));
+      } else {
+        payload = String(msg.data);
+      }
+      this.emit('message', topic, payload);
+    });
+  }
+
+  publish(topic: string, message: string) {
+    const channel = this.client.channels.get(topic);
+    channel.publish(undefined, message);
+  }
+
+  end(force?: boolean) {
+    this.client.close();
+  }
+}
 
 export const BROKERS = [
   {
@@ -20,6 +73,7 @@ export const BROKERS = [
       clean: true,
       reconnectPeriod: 5000,
     },
+    useAbly: false
   },
   {
     id: 'BROKER2',
@@ -33,23 +87,23 @@ export const BROKERS = [
       clean: true,
       reconnectPeriod: 5000,
     },
+    useAbly: false
   },
   {
     id: 'BROKER3',
     name: 'BROKER3 (Ably)',
-    url: 'wss://mqtt.ably.io:443/mqtt',
+    url: '', // connection handled by ably sdk
     options: {
       username: '2fHRLg.LixlRg',
       password: 'bhjvIdszO--QR4JqK4eIcdA2aAbwO0vGNN_kJOPucnQ',
-      protocolVersion: 4 as const,
-      clean: true,
-      reconnectPeriod: 5000,
     },
+    useAbly: true
   },
 ];
 
 interface AppState {
-  client: mqtt.MqttClient | null;
+  client: any | null; // Allow our wrapper
+
   activeBroker: string;
   connectionStatus: 'Disconnected' | 'Connecting' | 'Connected' | 'Error';
   temperature: string;
@@ -93,6 +147,13 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   connect: (brokerId: string) => {
     const state = get();
+    
+    // Request ESP32 to switch broker BEFORE disconnecting from the current one
+    if (state.client && state.connectionStatus === 'Connected') {
+      state.client.publish('kontrol/broker', brokerId);
+      state.addLog(`Mengirim instruksi ganti broker ke ESP32: ${brokerId}`, 'command');
+    }
+
     if (state.client) {
       state.client.removeAllListeners(); // Prevent old events from interfering
       state.client.end(true);
@@ -106,14 +167,17 @@ export const useAppStore = create<AppState>((set, get) => ({
     state.addLog(`Connecting to ${brokerConfig.name}...`, 'info');
 
     try {
-      // Create dynamic options per connection to prevent clientId collision
-      // Only set a random clientId if the broker config doesn't enforce a specific one.
-      const connectOptions = {
-        clientId: `WebClient_${Math.random().toString(16).slice(2, 10)}`,
-        ...brokerConfig.options,
-      };
-
-      const newClient = mqtt.connect(brokerConfig.url, connectOptions);
+      let newClient: any;
+      
+      if (brokerConfig.useAbly) {
+        newClient = new AblyMqttWrapper(`${brokerConfig.options.username}:${brokerConfig.options.password}`);
+      } else {
+        const connectOptions = {
+          clientId: `WebClient_${Math.random().toString(16).slice(2, 10)}`,
+          ...brokerConfig.options,
+        };
+        newClient = mqtt.connect(brokerConfig.url, connectOptions);
+      }
 
       newClient.on('connect', () => {
         set({ connectionStatus: 'Connected' });
