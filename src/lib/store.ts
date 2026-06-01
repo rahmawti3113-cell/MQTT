@@ -22,7 +22,6 @@ export const BROKERS = [
     options: {
       username: 'ztmxasef:ztmxasef',
       password: 'AxprRMcQ9pDWkyWqcCZa_q2fuTBWQsGE',
-      protocol: 'ws' as const,
       protocolVersion: 4 as const,
       clean: true,
       reconnectPeriod: 5000,
@@ -36,7 +35,6 @@ export const BROKERS = [
       username: 'Web',
       password: 'a',
       clientId: 'WebClient',
-      protocol: 'ws' as const,
       protocolVersion: 4 as const,
       clean: true,
       reconnectPeriod: 5000,
@@ -49,7 +47,6 @@ export const BROKERS = [
     options: {
       username: '2fHRLg.LixlRg',
       password: 'bhjvIdszO--QR4JqK4eIcdA2aAbwO0vGNN_kJOPucnQ',
-      protocol: 'ws' as const,
       protocolVersion: 4 as const,
       clean: true,
       reconnectPeriod: 5000,
