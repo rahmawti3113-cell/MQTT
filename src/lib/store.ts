@@ -8,20 +8,15 @@ export type LogEntry = {
   type: 'info' | 'success' | 'error' | 'command';
 };
 
-const getProxyUrl = (targetHost: string, targetPort: number) => {
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const host = window.location.host;
-  return `${protocol}//${host}/mqtt-proxy?host=${targetHost}&port=${targetPort}`;
-};
-
 export const BROKERS = [
   {
     id: 'BROKER1',
     name: 'BROKER1 (CloudAMQP)',
-    url: getProxyUrl('kingfisher.lmq.cloudamqp.com', 8883),
+    url: 'wss://kingfisher.lmq.cloudamqp.com:443/ws',
     options: {
       username: 'ztmxasef:ztmxasef',
       password: 'AxprRMcQ9pDWkyWqcCZa_q2fuTBWQsGE',
+      protocol: 'wss' as const,
       protocolVersion: 4 as const,
       clean: true,
       reconnectPeriod: 5000,
@@ -30,11 +25,12 @@ export const BROKERS = [
   {
     id: 'BROKER2',
     name: 'BROKER2 (Cedalo)',
-    url: getProxyUrl('pf-26xt4cmufmfw6kr1zpyq.cedalo.cloud', 8883),
+    url: 'wss://pf-26xt4cmufmfw6kr1zpyq.cedalo.cloud:443/mqtt',
     options: {
       username: 'Web',
       password: 'a',
       clientId: 'WebClient',
+      protocol: 'wss' as const,
       protocolVersion: 4 as const,
       clean: true,
       reconnectPeriod: 5000,
@@ -42,11 +38,10 @@ export const BROKERS = [
   },
   {
     id: 'BROKER3',
-    name: 'BROKER3 (Ably)',
-    url: getProxyUrl('mqtt.ably.io', 8883),
+    name: 'BROKER3 (EMQX)',
+    url: 'wss://broker.emqx.io:8084/mqtt',
     options: {
-      username: '2fHRLg.LixlRg',
-      password: 'bhjvIdszO--QR4JqK4eIcdA2aAbwO0vGNN_kJOPucnQ',
+      protocol: 'wss' as const,
       protocolVersion: 4 as const,
       clean: true,
       reconnectPeriod: 5000,
